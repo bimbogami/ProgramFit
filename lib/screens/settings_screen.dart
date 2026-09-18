@@ -167,7 +167,7 @@ class SettingsScreen extends StatelessWidget {
         const SizedBox(height: 12),
         _buildInfoCard(
           icon: Icons.info_outline_rounded,
-          title: 'About UDD ProgramFit',
+          title: 'About UdD ProgramFit',
           content: 'ProgramFit is a career guidance application designed to help students discover the academic program that best matches their interests, strengths, and career aspirations. Through a structured two-phase assessment, the app analyzes student preferences across multiple dimensions and recommends the most suitable programs offered by the university.',
         ),
         const SizedBox(height: 10),
@@ -180,7 +180,7 @@ class SettingsScreen extends StatelessWidget {
         _buildInfoCard(
           icon: Icons.people_outline_rounded,
           title: 'Developers',
-          content: 'Developed by the UDD ProgramFit Team. A group of passionate students and faculty working together to improve career guidance through technology.',
+          content: 'Developed by the UdD ProgramFit Team. A group of passionate students and faculty working together to improve career guidance through technology.',
         ),
         const SizedBox(height: 10),
         _buildInfoCard(
@@ -192,7 +192,7 @@ class SettingsScreen extends StatelessWidget {
         _buildInfoCard(
           icon: Icons.bug_report_outlined,
           title: 'Feedback / Report an Issue',
-          content: 'Found a bug or have a suggestion? We\'d love to hear from you! Please reach out to the development team through your school\'s IT department or email us at programfit-feedback@udd.edu.ph. Your feedback helps us improve the app for everyone.',
+          content: 'Found a bug or have a suggestion? We\'d love to hear from you! Please reach out to the development team through your school\'s IT department or email us at programfit-feedback@UdD.edu.ph. Your feedback helps us improve the app for everyone.',
         ),
       ],
     );

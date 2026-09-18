@@ -6,6 +6,8 @@ class AppState {
   AppState._();
 
   static final ValueNotifier<QuizResult?> latestResult = ValueNotifier<QuizResult?>(null);
+  static final ValueNotifier<bool> isLoggedIn = ValueNotifier<bool>(false);
+  static final ValueNotifier<String?> currentUser = ValueNotifier<String?>(null);
 
   static bool _initialized = false;
 
@@ -18,6 +20,9 @@ class AppState {
       latestResult.value = saved;
     }
 
+    isLoggedIn.value = await StorageHelper.loadLoginState();
+    currentUser.value = await StorageHelper.loadCurrentUser();
+
     latestResult.addListener(() async {
       final result = latestResult.value;
       if (result != null) {
@@ -25,6 +30,14 @@ class AppState {
       } else {
         await StorageHelper.clearQuizResult();
       }
+    });
+
+    isLoggedIn.addListener(() async {
+      await StorageHelper.saveLoginState(isLoggedIn.value);
+    });
+
+    currentUser.addListener(() async {
+      await StorageHelper.saveCurrentUser(currentUser.value);
     });
   }
 
@@ -41,5 +54,18 @@ class AppState {
   static Future<void> clearData() async {
     latestResult.value = null;
     await StorageHelper.clearQuizResult();
+  }
+
+  static Future<void> logIn([String? username]) async {
+    final normalized = username == null ? currentUser.value : username.trim();
+    if (normalized != null && normalized.isNotEmpty) {
+      currentUser.value = normalized;
+    }
+    isLoggedIn.value = true;
+  }
+
+  static Future<void> logOut() async {
+    isLoggedIn.value = false;
+    currentUser.value = null;
   }
 }
