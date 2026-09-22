@@ -27,6 +27,27 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentNavIndex = 0;
+  Future<void>? _googleSignInInitialization;
+
+  Future<void> _initializeGoogleSignIn() async {
+    final existingInitialization = _googleSignInInitialization;
+    if (existingInitialization != null) {
+      await existingInitialization;
+      return;
+    }
+
+    final initialization = GoogleSignIn.instance.initialize(
+      clientId: DashboardScreen.googleClientId,
+    );
+    _googleSignInInitialization = initialization;
+
+    try {
+      await initialization;
+    } catch (_) {
+      _googleSignInInitialization = null;
+      rethrow;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -157,9 +178,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
-          child: IconButton(
-            tooltip: 'Log in',
-            onPressed: _showLoginDialog,
+          child: PopupMenuButton<String>(
+            tooltip: 'Profile settings',
+            onSelected: (action) async {
+              if (action == 'account_settings') {
+                setState(() => _currentNavIndex = 3);
+              } else if (action == 'log_out') {
+                await AppState.logOut();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'account_settings',
+                child: Text('Account Settings'),
+              ),
+              PopupMenuItem<String>(
+                value: 'log_out',
+                child: Text('Log out'),
+              ),
+            ],
             icon: const Icon(Icons.account_circle, size: 40, color: Colors.white),
           ),
         ),
@@ -642,11 +679,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _signInWithGoogle(BuildContext authContext, {bool shouldCloseDialog = false}) async {
     try {
-      final googleSignIn = GoogleSignIn.instance;
-      await googleSignIn.initialize(
-        clientId: DashboardScreen.googleClientId,
-      );
-      final account = await googleSignIn.authenticate();
+      await _initializeGoogleSignIn();
+      final account = await GoogleSignIn.instance.authenticate();
 
       if (!mounted || !authContext.mounted || account.email.isEmpty) return;
 
