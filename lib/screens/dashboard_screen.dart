@@ -14,6 +14,8 @@ import 'programs_screen.dart';
 import 'analytics_screen.dart';
 import 'settings_screen.dart';
 import 'explore_screen.dart';
+import 'news_page.dart';
+import 'schedule_ps.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -28,6 +30,58 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentNavIndex = 0;
   Future<void>? _googleSignInInitialization;
+  bool? _hasAnswered;
+
+  @override
+  void initState() {
+    super.initState();
+    AppState.currentUser.addListener(_loadAssessmentStatus);
+    AppState.isLoggedIn.addListener(_loadAssessmentStatus);
+    AppState.latestResult.addListener(_loadAssessmentStatus);
+    _loadAssessmentStatus();
+  }
+
+  @override
+  void dispose() {
+    AppState.currentUser.removeListener(_loadAssessmentStatus);
+    AppState.isLoggedIn.removeListener(_loadAssessmentStatus);
+    AppState.latestResult.removeListener(_loadAssessmentStatus);
+    super.dispose();
+  }
+
+  Future<void> _loadAssessmentStatus() async {
+    final username = AppState.currentUser.value;
+    if (!AppState.isLoggedIn.value || username == null || username.isEmpty) {
+      if (mounted) setState(() => _hasAnswered = null);
+      return;
+    }
+
+    if (AppState.latestResult.value != null) {
+      if (mounted) setState(() => _hasAnswered = true);
+      return;
+    }
+
+    try {
+      final row = await Supabase.instance.client
+          .from('user_acc')
+          .select('has_answered')
+          .eq('username', username)
+          .maybeSingle();
+
+      if (!mounted) return;
+
+      if (row == null || row['has_answered'] == null) {
+        setState(() => _hasAnswered = false);
+        return;
+      }
+
+      final value = row['has_answered'];
+      final isAnswered = value == true || value.toString().toLowerCase() == 'true';
+      setState(() => _hasAnswered = isAnswered);
+    } catch (_) {
+      if (mounted) setState(() => _hasAnswered = null);
+    }
+  }
 
   Future<void> _initializeGoogleSignIn() async {
     final existingInitialization = _googleSignInInitialization;
@@ -129,6 +183,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 2:
         return const AnalyticsContent();
       case 3:
+        return const SchedulePsScreen();
+      case 4:
         return const SettingsScreen();
       default:
         return _buildPlaceholderScreen(_currentNavIndex);
@@ -136,71 +192,326 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildDashboard(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 16),
-          _buildHeader(),
-          const SizedBox(height: 24),
-          _buildSummaryCard(),
-          const SizedBox(height: 24),
-          _buildQuickActions(context),
-          const SizedBox(height: 24),
-          _buildRecentActivity(),
-          const SizedBox(height: 100),
-        ],
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 430),
+        child: SizedBox(
+          width: double.infinity,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(),
+                if (_hasAnswered == false) ...[
+                  const SizedBox(height: 14),
+                  _buildAssessmentPrompt(context),
+                ],
+                const SizedBox(height: 22),
+                _buildAdmissionsHero(context),
+                const SizedBox(height: 18),
+                _buildDiscoverCard(context),
+                const SizedBox(height: 24),
+                const NewsPage(),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildHeader() {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'ProgramFit',
-              style: AppTheme.headingLarge,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Find your perfect program match',
-              style: AppTheme.bodySmall.copyWith(fontSize: 14),
-            ),
-          ],
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(color: AppColors.border, width: 1.5),
+          ),
+          child: const Image(image: AssetImage('/lib/assets/UdD-Logo.png'), width: 24, height: 24),
         ),
-        Card(
-          color: const Color.fromARGB(255, 0, 19, 61),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: PopupMenuButton<String>(
-            tooltip: 'Profile settings',
-            onSelected: (action) async {
-              if (action == 'account_settings') {
-                setState(() => _currentNavIndex = 3);
-              } else if (action == 'log_out') {
-                await AppState.logOut();
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem<String>(
-                value: 'account_settings',
-                child: Text('Account Settings'),
-              ),
-              PopupMenuItem<String>(
-                value: 'log_out',
-                child: Text('Log out'),
-              ),
-            ],
-            icon: const Icon(Icons.account_circle, size: 40, color: Colors.white),
-          ),
+        const SizedBox(width: 9),
+        const Expanded(
+          child: Text('ProgramFit', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textBold)),
         ),
       ],
+    );
+  }
+
+  Widget _buildAssessmentPrompt(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const QuestionnaireScreen()),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE8F0FF),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.primary, width: 1.5),
+          boxShadow: const [
+            BoxShadow(color: AppColors.shadow, offset: Offset(3, 3), blurRadius: 0),
+          ],
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.assignment_rounded, color: AppColors.primary, size: 21),
+            SizedBox(width: 8),
+            Expanded(child: Text("You haven't taken the assessment yet, ready to take? Tap here", textAlign: TextAlign.center, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.textBold))),
+            SizedBox(width: 8),
+            Icon(Icons.arrow_forward_rounded, color: AppColors.primary, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _headerButton(IconData icon, String label, {bool filled = false}) {
+    return Tooltip(
+      message: label,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: filled ? AppColors.primary : AppColors.surface,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: AppColors.border, width: 1.5),
+          boxShadow: filled ? const [BoxShadow(color: AppColors.shadow, offset: Offset(2, 2), blurRadius: 0)] : null,
+        ),
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          onPressed: () => setState(() => _currentNavIndex = filled ? 3 : 2),
+          icon: Icon(icon, size: 21, color: filled ? Colors.white : AppColors.textBold),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdmissionsHero(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFDED),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border, width: 1.5),
+        boxShadow: const [BoxShadow(color: AppColors.shadow, offset: Offset(3, 4), blurRadius: 0)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                height: 160,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFFE5E5E5), Color(0xFF8C8C8C)],
+                  ),
+                ),
+                child: const Center(child: Icon(Icons.account_balance_outlined, size: 62, color: Color(0xFF666666))),
+              ),
+              Positioned(
+                left: 12,
+                bottom: -12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: AppColors.border, width: 1.5),
+                    boxShadow: const [BoxShadow(color: AppColors.shadow, offset: Offset(2, 2), blurRadius: 0)],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.verified, color: AppColors.primary, size: 15),
+                      SizedBox(width: 5),
+                      Text('2026-2027 1st SEMESTER CLASS IS ONGOING', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 28, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Discover Your Academic Future', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                const Text('Explore accredited programs across Technology, Health Sciences, Business, and Engineering designed to build industry-ready professionals.', style: TextStyle(fontSize: 14, height: 1.4, color: Color(0xFF18315B))),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: _showProgramSearch,
+                  child: Container(
+                    height: 48,
+                    padding: const EdgeInsets.only(left: 12, right: 5),
+                    decoration: BoxDecoration(
+                      
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border, width: 1.5),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.search, size: 20, color: AppColors.textBold),
+                        SizedBox(width: 14),
+                        Expanded(child: Text('Search degrees, majors, or careers', overflow: TextOverflow.ellipsis, style: TextStyle(color: AppColors.textSecondary, fontSize: 14))),
+                        SizedBox(width: 34, height: 34, child: DecoratedBox(decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.all(Radius.circular(8))), child: Icon(Icons.tune_rounded, color: Colors.white, size: 18))),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
+  Future<void> _showProgramSearch() async {
+    final searchController = TextEditingController();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final query = searchController.text.trim().toLowerCase();
+            final matches = QuestionnaireData.programs.values.where((program) {
+              final department = QuestionnaireData.departments.firstWhere(
+                (item) => item.code == program.departmentCode,
+                orElse: () => QuestionnaireData.departments.first,
+              );
+              final searchable = '${program.name} ${program.code} ${department.schoolName}'.toLowerCase();
+              return query.isEmpty || searchable.contains(query);
+            }).toList();
+
+            return SafeArea(
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 620),
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFDED),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                  border: Border.all(color: AppColors.border, width: 1.5),
+                  boxShadow: const [
+                    BoxShadow(color: AppColors.shadow, offset: Offset(0, -4), blurRadius: 0),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(4)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Search programs', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textBold)),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: searchController,
+                      autofocus: true,
+                      onChanged: (_) => setSheetState(() {}),
+                      decoration: InputDecoration(
+                        hintText: 'Search degrees, majors, or schools',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: searchController.text.isEmpty
+                            ? null
+                            : IconButton(onPressed: () { searchController.clear(); setSheetState(() {}); }, icon: const Icon(Icons.clear)),
+                        filled: true,
+                        fillColor: AppColors.surface,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border, width: 1.5)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border, width: 1.5)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 2)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: matches.isEmpty
+                          ? const Center(child: Text('No matching programs found.'))
+                          : ListView.separated(
+                              itemCount: matches.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final program = matches[index];
+                                final department = QuestionnaireData.departments.firstWhere(
+                                  (item) => item.code == program.departmentCode,
+                                  orElse: () => QuestionnaireData.departments.first,
+                                );
+                                return ListTile(
+                                  onTap: () {
+                                    Navigator.pop(sheetContext);
+                                    setState(() => _currentNavIndex = 1);
+                                  },
+                                  tileColor: AppColors.surface,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.border, width: 1.2)),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                  leading: CircleAvatar(backgroundColor: AppColors.primary, child: Text(program.code.substring(0, 2), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))),
+                                  title: Text(program.name, style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textBold)),
+                                  subtitle: Text(department.schoolName, style: const TextStyle(color: AppColors.textSecondary)),
+                                  trailing: const Icon(Icons.chevron_right_rounded),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    searchController.dispose();
+  }
+
+  Widget _levelChip(String label, {bool selected = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(color: selected ? AppColors.textBold : AppColors.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: AppColors.border, width: 1.3)),
+      child: Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: selected ? Colors.white : AppColors.textBold)),
+    );
+  }
+
+
+  Widget _buildDiscoverCard(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProgramsScreen())),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: AppTheme.cardDecoration.copyWith(color: AppColors.surface),
+        child: const Row(
+          children: [
+            Icon(Icons.auto_awesome, color: AppColors.primary),
+            SizedBox(width: 10),
+            Expanded(child: Text('Discover programs built for your future', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700))),
+            Icon(Icons.arrow_forward_rounded, size: 20),
+          ],
+        ),
+      ),
     );
   }
 
@@ -725,6 +1036,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 .schoolName
             : null;
 
+
         return Container(
           width: double.infinity,
           padding: const EdgeInsets.all(20),
@@ -735,54 +1047,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Your Fit Score', style: AppTheme.headingSmall),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: hasResult
-                          ? AppColors.success.withValues(alpha: 0.12)
-                          : AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: hasResult ? AppColors.success : AppColors.primary,
-                        width: 1,
-                      ),
-                    ),
-                    child: Text(
-                      hasResult ? 'COMPLETED' : (AppState.currentUser.value ?? 'Guest'),
-                      style: TextStyle(
-                        color: hasResult ? AppColors.success : AppColors.primary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
+                  Text('Fit Score', style: AppTheme.headingSmall),
                   Text(
-                    hasResult ? '$score' : '—',
-                    style: TextStyle(
-                      fontSize: 52,
-                      fontWeight: FontWeight.w900,
-                      color: hasResult ? AppColors.primary : AppColors.textSecondary,
+                    hasResult ? '$score%' : 'No results yet',
+                    style: AppTheme.headingSmall.copyWith(
+                      color: hasResult ? AppColors.success : AppColors.textSecondary,
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      '/ 100',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
+              )
                 ],
               ),
               const SizedBox(height: 12),
@@ -985,7 +1256,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _NavItem(Icons.home_rounded, 'Home'),
       _NavItem(Icons.explore_rounded, 'Explore'),
       _NavItem(Icons.analytics_rounded, 'Analytics'),
+      _NavItem(Icons.calendar_month_rounded, 'Schedule PS Exam'),
       _NavItem(Icons.settings_rounded, 'Settings'),
+
     ];
 
     return Container(
@@ -1007,7 +1280,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               onTap: () => setState(() => _currentNavIndex = index),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                 decoration: isActive
                     ? BoxDecoration(
                         color: AppColors.primary,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../data/questionnaire_data.dart';
@@ -172,7 +173,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
     });
   }
 
-  void _computeFinalResult() {
+  Future<void> _computeFinalResult() async {
     final Map<String, int> deptScores = {};
     for (final dept in QuestionnaireData.departments) {
       deptScores[dept.code] = 0;
@@ -332,6 +333,18 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
     );
 
     AppState.latestResult.value = result;
+
+    final username = AppState.currentUser.value;
+    if (username != null && username.isNotEmpty) {
+      try {
+        await Supabase.instance.client
+            .from('user_acc')
+            .update({'has_answered': true})
+            .eq('username', username);
+      } catch (_) {
+        // Keep the local result available even if the status sync fails.
+      }
+    }
 
     Navigator.pushReplacement(
       context,

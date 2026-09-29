@@ -33,7 +33,7 @@ class ResultsScreen extends StatelessWidget {
               ],
               _buildRecommendations(),
               const SizedBox(height: 32),
-              _buildRetakeButton(context),
+              _buildHomeButton(context),
               const SizedBox(height: 100),
             ],
           ),
@@ -456,7 +456,7 @@ class ResultsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildRetakeButton(BuildContext context) {
+  Widget _buildHomeButton(BuildContext context) {
     return GestureDetector(
       onTap: () => Navigator.pop(context),
       child: Container(
@@ -465,7 +465,7 @@ class ResultsScreen extends StatelessWidget {
         decoration: AppTheme.primaryButtonDecoration,
         child: Center(
           child: Text(
-            'Retake Assessment',
+            'Back to Home',
             style: AppTheme.buttonText.copyWith(fontSize: 16),
           ),
         ),

@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../data/app_state.dart';
 import '../data/questionnaire_data.dart';
 import '../models/quiz_result.dart';
+import '../widgets/assessment_prompt.dart';
 
 class CareerInfo {
   final String title;
@@ -290,6 +291,8 @@ class ExploreScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: AppTheme.bodySmall.copyWith(fontSize: 14),
                 ),
+                const SizedBox(height: 18),
+                const AssessmentPrompt(widthFactor: 0.9),
               ],
             ),
           ),
@@ -321,6 +324,7 @@ class ExploreScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+            const AssessmentPrompt(widthFactor: 0.9),
           const SizedBox(height: 16),
           Text('Explore Careers', style: AppTheme.headingLarge),
           const SizedBox(height: 4),

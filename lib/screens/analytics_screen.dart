@@ -5,6 +5,7 @@ import '../data/app_state.dart';
 import '../data/questionnaire_data.dart';
 import '../models/quiz_result.dart';
 import '../models/department.dart';
+import '../widgets/assessment_prompt.dart';
 
 class AnalyticsContent extends StatelessWidget {
   const AnalyticsContent({super.key});
@@ -46,13 +47,15 @@ class AnalyticsContent extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text('No Data Yet', style: AppTheme.headingMedium.copyWith(color: AppColors.textSecondary)),
+                Text('No Data', style: AppTheme.headingMedium.copyWith(color: AppColors.textSecondary)),
                 const SizedBox(height: 8),
                 Text(
                   'Complete the assessment to see\nyour analytics breakdown',
                   textAlign: TextAlign.center,
                   style: AppTheme.bodySmall.copyWith(fontSize: 14),
                 ),
+                const SizedBox(height: 18),
+                const AssessmentPrompt(widthFactor: 0.9),
               ],
             ),
           ),
@@ -72,6 +75,7 @@ class AnalyticsContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const AssessmentPrompt(widthFactor: 0.9),
           const SizedBox(height: 16),
           _buildHeader(),
           const SizedBox(height: 24),

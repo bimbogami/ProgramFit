@@ -1,4 +1,9 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../data/app_state.dart';
@@ -19,7 +24,9 @@ class SettingsScreen extends StatelessWidget {
               const SizedBox(height: 16),
               Text('Settings', style: AppTheme.headingLarge),
               const SizedBox(height: 24),
-              _buildClearResultsCard(context),
+              _buildAccountSettingsCard(context),
+              const SizedBox(height: 12),
+              _buildLogoutCard(context),
               const SizedBox(height: 20),
               _buildAboutSection(),
               const SizedBox(height: 100),
@@ -30,77 +37,315 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildClearResultsCard(BuildContext context) {
-    return ValueListenableBuilder(
-      valueListenable: AppState.latestResult,
-      builder: (context, result, _) {
-        final hasData = result != null;
-
-        return GestureDetector(
-          onTap: hasData ? () => _showClearDialog(context) : null,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: AppTheme.cardDecoration.copyWith(
-              color: hasData ? Colors.white : AppColors.surface,
+  Widget _buildAccountSettingsCard(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _showAccountSettingsDialog(context),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: AppTheme.cardDecoration.copyWith(
+          color: Colors.white,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.primary,
+                  width: 1.5,
+                ),
+              ),
+              child: const Icon(
+                Icons.person_outline_rounded,
+                size: 22,
+                color: AppColors.primary,
+              ),
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: hasData
-                        ? AppColors.error.withValues(alpha: 0.12)
-                        : AppColors.textSecondary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: hasData ? AppColors.error : AppColors.border,
-                      width: 1.5,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Account Settings',
+                    style: AppTheme.bodyMedium.copyWith(
+                      color: AppColors.textBold,
                     ),
                   ),
-                  child: Icon(
-                    Icons.delete_outline_rounded,
-                    size: 22,
-                    color: hasData ? AppColors.error : AppColors.textSecondary,
+                  const SizedBox(height: 2),
+                  Text(
+                    'Update username and password',
+                    style: AppTheme.bodySmall.copyWith(fontSize: 12),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Clear Results',
-                        style: AppTheme.bodyMedium.copyWith(
-                          color: hasData ? AppColors.textBold : AppColors.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        hasData
-                            ? 'Reset your assessment and start fresh'
-                            : 'No results to clear',
-                        style: AppTheme.bodySmall.copyWith(fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-                if (hasData)
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: AppColors.textSecondary,
-                    size: 22,
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-      },
+            Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textSecondary,
+              size: 22,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  void _showClearDialog(BuildContext context) {
+  Widget _buildLogoutCard(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _showLogoutDialog(context),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: AppTheme.cardDecoration.copyWith(
+          color: AppColors.surface,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.error,
+                  width: 1.5,
+                ),
+              ),
+              child: const Icon(
+                Icons.logout_rounded,
+                size: 22,
+                color: AppColors.error,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Logout',
+                    style: AppTheme.bodyMedium.copyWith(
+                      color: AppColors.textBold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Sign out of your account',
+                    style: AppTheme.bodySmall.copyWith(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textSecondary,
+              size: 22,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _hashPassword(String password) {
+    final bytes = utf8.encode(password);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
+  Future<void> _showAccountSettingsDialog(BuildContext context) async {
+    final currentUsername = AppState.currentUser.value ?? '';
+    final usernameController = TextEditingController(text: currentUsername);
+    final passwordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setState) {
+          return AlertDialog(
+            backgroundColor: AppColors.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppColors.border, width: 1.5),
+            ),
+            title: Text('Account Settings', style: AppTheme.headingSmall),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: usernameController,
+                    decoration: InputDecoration(
+                      labelText: 'Username',
+                      prefixIcon: const Icon(Icons.person_outline),
+                      filled: true,
+                      fillColor: AppColors.background,
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'New password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      filled: true,
+                      fillColor: AppColors.background,
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmPasswordController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'Confirm new password',
+                      prefixIcon: const Icon(Icons.lock_reset_outlined),
+                      filled: true,
+                      fillColor: AppColors.background,
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final newUsername = usernameController.text.trim();
+                  final newPassword = passwordController.text;
+                  final confirmPassword = confirmPasswordController.text;
+
+                  if (newUsername.isEmpty || newUsername.length < 3) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Username must be at least 3 characters.')),
+                    );
+                    return;
+                  }
+
+                  if (newPassword.isNotEmpty && newPassword.length < 8) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Password must be at least 8 characters.')),
+                    );
+                    return;
+                  }
+
+                  if (newPassword.isNotEmpty && newPassword != confirmPassword) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Passwords do not match.')),
+                    );
+                    return;
+                  }
+
+                  try {
+                    final hasDuplicateUsername = newUsername != currentUsername
+                        ? await Supabase.instance.client
+                            .from('user_acc')
+                            .select('username')
+                            .eq('username', newUsername)
+                            .maybeSingle() !=
+                            null
+                        : false;
+
+                    if (hasDuplicateUsername) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Username already exists.')),
+                      );
+                      return;
+                    }
+
+                    final updates = <String, dynamic>{'username': newUsername};
+                    if (newPassword.isNotEmpty) {
+                      updates['password'] = _hashPassword(newPassword);
+                    }
+
+                    await Supabase.instance.client
+                        .from('user_acc')
+                        .update(updates)
+                        .eq('username', currentUsername);
+
+                    if (!context.mounted) return;
+                    AppState.currentUser.value = newUsername;
+                    AppState.logIn(newUsername);
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Account settings updated.')),
+                    );
+                  } catch (_) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Unable to update account settings.')),
+                    );
+                  }
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    usernameController.dispose();
+    passwordController.dispose();
+    confirmPasswordController.dispose();
+  }
+
+  void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -109,9 +354,9 @@ class SettingsScreen extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: AppColors.border, width: 1.5),
         ),
-        title: Text('Clear Results?', style: AppTheme.headingSmall),
+        title: Text('Logout?', style: AppTheme.headingSmall),
         content: Text(
-          'This will delete your current assessment results and recommendations. You can retake the quiz anytime.',
+          'You will need to sign in again to access your saved account.',
           style: AppTheme.bodyMedium.copyWith(fontSize: 13, color: AppColors.textSecondary),
         ),
         actions: [
@@ -119,40 +364,15 @@ class SettingsScreen extends StatelessWidget {
             onPressed: () => Navigator.pop(ctx),
             child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
           ),
-          GestureDetector(
-            onTap: () {
-              AppState.clearData();
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Results cleared! Take the quiz again.',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  backgroundColor: AppColors.success,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    side: const BorderSide(color: AppColors.border, width: 1),
-                  ),
-                ),
-              );
+          TextButton(
+            onPressed: () async {
+              await AppState.logOut();
+              if (context.mounted) Navigator.pop(ctx);
             },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.error,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.border, width: 1),
-              ),
-              child: const Text(
-                'Clear',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.error,
             ),
+            child: const Text('Logout'),
           ),
         ],
       ),
