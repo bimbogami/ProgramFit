@@ -233,7 +233,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             borderRadius: BorderRadius.circular(11),
             border: Border.all(color: AppColors.border, width: 1.5),
           ),
-          child: const Image(image: AssetImage('/lib/assets/UdD-Logo.png'), width: 24, height: 24),
+          child: const Image(image: AssetImage('lib/assets/UdD-Logo.png'), width: 24, height: 24),
         ),
         const SizedBox(width: 9),
         const Expanded(
