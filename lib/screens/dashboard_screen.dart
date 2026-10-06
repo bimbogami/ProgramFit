@@ -230,14 +230,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           height: 38,
           decoration: BoxDecoration(
             color: AppColors.surface,
-            borderRadius: BorderRadius.circular(11),
-            border: Border.all(color: AppColors.border, width: 1.5),
+            borderRadius: BorderRadius.circular(50),
+            border: Border.all(color: const Color.fromARGB(255, 255, 255, 255), width: 1.5),
           ),
           child: const Image(image: AssetImage('lib/assets/UdD-Logo.png'), width: 24, height: 24),
         ),
-        const SizedBox(width: 9),
+
         const Expanded(
-          child: Text('ProgramFit', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textBold)),
+          child: Text(' ProgramFit', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textBold)),
         ),
       ],
     );
