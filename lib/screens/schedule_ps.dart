@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
 
 class SchedulePsScreen extends StatelessWidget {
   const SchedulePsScreen({super.key});

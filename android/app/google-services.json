@@ -1,1 +1,39 @@
-{"installed":{"client_id":"94202030933-dfat8o05ass5agj9ockim1ah80h1412j.apps.googleusercontent.com","project_id":"programfinderlogin","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs"}}
+{
+  "project_info": {
+    "project_number": "307959989529",
+    "project_id": "programfinderlogin",
+    "storage_bucket": "programfinderlogin.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:307959989529:android:programfit",
+        "android_client_info": {
+          "package_name": "com.programfit.programfit"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "307959989529-5c0sei6v7bab0q2ild46j7q5q7g03d8e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": ""
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "307959989529-5c0sei6v7bab0q2ild46j7q5q7g03d8e.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

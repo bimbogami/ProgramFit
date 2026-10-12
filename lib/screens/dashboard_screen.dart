@@ -1,8 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:google_sign_in_platform_interface/google_sign_in_platform_interface.dart';
+import 'package:google_sign_in_web/google_sign_in_web.dart' as web;
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -30,6 +35,8 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentNavIndex = 0;
   Future<void>? _googleSignInInitialization;
+  bool _isGoogleSignInInitialized = false;
+  StreamSubscription<GoogleSignInAuthenticationEvent>? _googleSignInSubscription;
   bool? _hasAnswered;
 
   @override
@@ -39,10 +46,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
     AppState.isLoggedIn.addListener(_loadAssessmentStatus);
     AppState.latestResult.addListener(_loadAssessmentStatus);
     _loadAssessmentStatus();
+    _initGoogleSignInListener();
+  }
+
+  void _initGoogleSignInListener() {
+    _googleSignInSubscription = GoogleSignIn.instance.authenticationEvents.listen(
+      (event) {
+        if (event is GoogleSignInAuthenticationEventSignIn) {
+          _handleGoogleAccount(event.user);
+        }
+      },
+      onError: (error) {
+        debugPrint('Google Sign-In event error: $error');
+      },
+    );
   }
 
   @override
   void dispose() {
+    _googleSignInSubscription?.cancel();
     AppState.currentUser.removeListener(_loadAssessmentStatus);
     AppState.isLoggedIn.removeListener(_loadAssessmentStatus);
     AppState.latestResult.removeListener(_loadAssessmentStatus);
@@ -84,6 +106,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _initializeGoogleSignIn() async {
+    if (_isGoogleSignInInitialized) return;
     final existingInitialization = _googleSignInInitialization;
     if (existingInitialization != null) {
       await existingInitialization;
@@ -91,12 +114,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     final initialization = GoogleSignIn.instance.initialize(
-      clientId: DashboardScreen.googleClientId,
+      clientId: kIsWeb ? DashboardScreen.googleClientId : null,
+      serverClientId: kIsWeb ? null : DashboardScreen.googleClientId,
     );
     _googleSignInInitialization = initialization;
 
     try {
       await initialization;
+      _isGoogleSignInInitialized = true;
     } catch (_) {
       _googleSignInInitialization = null;
       rethrow;
@@ -151,22 +176,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => _signInWithGoogle(context),
-                icon: const Text(
-                  'G',
-                  style: TextStyle(
-                    color: Color(0xFF4285F4),
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                label: const Text('Continue with Google'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
-                  side: BorderSide(color: AppColors.border),
-                ),
-              ),
+              _buildGoogleSignInButton(context),
             ],
           ),
         ),
@@ -521,6 +531,94 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return digest.toString();
   }
 
+  /// Strict email validation for manual registration.
+  /// Checks format, domain structure, and TLD validity.
+  bool _isValidEmail(String email) {
+    if (email.isEmpty || email.length > 254) return false;
+
+    // RFC 5322 compliant regex for common email formats
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9.!#$%&*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$',
+    );
+    if (!emailRegex.hasMatch(email)) return false;
+
+    final parts = email.split('@');
+    if (parts.length != 2) return false;
+
+    final localPart = parts[0];
+    final domain = parts[1];
+
+    // Local part checks
+    if (localPart.isEmpty || localPart.length > 64) return false;
+    if (localPart.startsWith('.') || localPart.endsWith('.')) return false;
+    if (localPart.contains('..')) return false;
+
+    // Domain checks
+    final domainParts = domain.split('.');
+    if (domainParts.length < 2) return false; // Must have at least domain.tld
+
+    // TLD must be at least 2 characters (e.g. .com, .ph, .edu)
+    final tld = domainParts.last;
+    if (tld.length < 2) return false;
+
+    // All domain parts must be non-empty
+    if (domainParts.any((part) => part.isEmpty)) return false;
+
+    return true;
+  }
+
+  /// Verifies that the email domain exists and can receive mail via DNS MX lookup.
+  Future<bool> _verifyEmailDomainExists(String email) async {
+    try {
+      final atIndex = email.indexOf('@');
+      if (atIndex == -1 || atIndex == email.length - 1) return false;
+      final domain = email.substring(atIndex + 1).trim().toLowerCase();
+      if (domain.isEmpty || !domain.contains('.')) return false;
+
+      // Common trusted domains - fast path
+      const trustedDomains = {
+        'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.com.ph',
+        'outlook.com', 'hotmail.com', 'live.com', 'icloud.com',
+        'udd.edu.ph', 'deped.gov.ph', 'edu.ph', 'gov.ph',
+        'proton.me', 'protonmail.com', 'mail.com', 'zoho.com',
+        'aol.com', 'msn.com', 'yandex.com',
+      };
+      if (trustedDomains.contains(domain)) {
+        return true;
+      }
+
+      // Query Google DNS-over-HTTPS for MX records
+      final mxUri = Uri.parse('https://dns.google/resolve?name=$domain&type=MX');
+      final response = await http.get(mxUri).timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final status = data['Status'];
+        // Status 3 is NXDOMAIN (domain does not exist)
+        if (status == 3) return false;
+
+        final answer = data['Answer'];
+        if (answer != null && answer is List && answer.isNotEmpty) {
+          return true;
+        }
+
+        // Fallback: check A record in case mail is routed to domain root
+        final aUri = Uri.parse('https://dns.google/resolve?name=$domain&type=A');
+        final aResponse = await http.get(aUri).timeout(const Duration(seconds: 3));
+        if (aResponse.statusCode == 200) {
+          final aData = jsonDecode(aResponse.body);
+          if (aData['Status'] == 0 && aData['Answer'] != null && (aData['Answer'] as List).isNotEmpty) {
+            return true;
+          }
+        }
+        return false;
+      }
+    } catch (_) {
+      // If DNS check times out or network is temporarily unreachable, do not hard-block valid formats
+      return true;
+    }
+    return true;
+  }
+
   Future<bool> _validateUserCredentials(String username, String password) async {
     final cleanedUsername = username.trim();
     if (cleanedUsername.isEmpty || password.isEmpty) {
@@ -582,33 +680,89 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return null;
   }
 
-  Future<void> _saveGoogleUserToDatabase(String email, String googleId) async {
-    final hashedPassword = _hashPassword(googleId);
-    final username = email.split('@').first;
+  /// Handles saving Google user: if email isn't in database, creates a new account;
+  /// if already exists, preserves their existing username and logs in.
+  Future<void> _handleGoogleAccount(
+    GoogleSignInAccount account, {
+    BuildContext? authContext,
+    bool shouldCloseDialog = false,
+  }) async {
+    final email = account.email.trim();
+    if (email.isEmpty) return;
 
-    final existing = await Supabase.instance.client
-        .from('user_acc')
-        .select()
-        .eq('email', email)
-        .maybeSingle();
-
-    if (existing != null) {
-      await Supabase.instance.client
+    try {
+      final existing = await Supabase.instance.client
           .from('user_acc')
-          .update({
-            'username': username,
-            'email': email,
-            'password': hashedPassword,
-          })
-          .eq('email', email);
-      return;
-    }
+          .select()
+          .eq('email', email)
+          .maybeSingle();
 
-    await Supabase.instance.client.from('user_acc').insert({
-      'username': username,
-      'email': email,
-      'password': hashedPassword,
-    });
+      String activeUsername;
+      if (existing != null) {
+        // User already has an account: retain existing username
+        activeUsername = existing['username']?.toString() ?? email.split('@').first;
+        final currentPassword = existing['password']?.toString() ?? '';
+        if (currentPassword.isEmpty) {
+          await Supabase.instance.client
+              .from('user_acc')
+              .update({'password': _hashPassword(account.id)})
+              .eq('email', email);
+        }
+      } else {
+        // New account: generate clean, unique username
+        var baseUsername = account.displayName?.trim().replaceAll(RegExp(r'\s+'), '_').toLowerCase() ?? '';
+        if (baseUsername.length < 3) {
+          baseUsername = email.split('@').first.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
+        }
+        if (baseUsername.length < 3) {
+          baseUsername = 'user_${account.id.length > 5 ? account.id.substring(0, 5) : "g"}';
+        }
+
+        var uniqueUsername = baseUsername;
+        var counter = 1;
+        while (true) {
+          final conflict = await Supabase.instance.client
+              .from('user_acc')
+              .select('username')
+              .eq('username', uniqueUsername)
+              .maybeSingle();
+          if (conflict == null) break;
+          uniqueUsername = '${baseUsername}_$counter';
+          counter++;
+        }
+
+        await Supabase.instance.client.from('user_acc').insert({
+          'username': uniqueUsername,
+          'email': email,
+          'password': _hashPassword(account.id),
+          'has_answered': false,
+        });
+        activeUsername = uniqueUsername;
+      }
+
+      await AppState.logIn(activeUsername);
+
+      if (shouldCloseDialog && authContext != null && authContext.mounted) {
+        final navigator = Navigator.of(authContext, rootNavigator: true);
+        if (navigator.canPop()) {
+          navigator.pop();
+        }
+      }
+
+      final contextToShow = authContext ?? (mounted ? context : null);
+      if (contextToShow != null && contextToShow.mounted) {
+        ScaffoldMessenger.of(contextToShow).showSnackBar(
+          SnackBar(content: Text('Signed in with Google as $activeUsername.')),
+        );
+      }
+    } catch (e) {
+      final contextToShow = authContext ?? (mounted ? context : null);
+      if (contextToShow != null && contextToShow.mounted) {
+        ScaffoldMessenger.of(contextToShow).showSnackBar(
+          SnackBar(content: Text('Failed to save Google account: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _showLoginDialog() async {
@@ -814,26 +968,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    OutlinedButton.icon(
-                      onPressed: () => _signInWithGoogle(context, shouldCloseDialog: true),
-                      icon: const Text(
-                        'G',
-                        style: TextStyle(
-                          color: Color(0xFF4285F4),
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      label: const Text('Continue with Google'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.textBold,
-                        minimumSize: const Size.fromHeight(48),
-                        side: BorderSide(color: AppColors.border, width: 1.2),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
+                    _buildGoogleSignInButton(context, shouldCloseDialog: true),
                   ],
                   const SizedBox(height: 18),
                   Row(
@@ -851,18 +986,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           final username = isSignUp ? usernameController.text.trim() : email;
 
                           if (isSignUp) {
-                            final emailIsValid = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
                             if (username.isEmpty || username.length < 3) {
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(this.context).showSnackBar(
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('Username must be at least 3 characters.')),
                               );
                               return;
                             }
-                            if (!emailIsValid) {
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(this.context).showSnackBar(
-                                const SnackBar(content: Text('Enter a valid email address.')),
+                            if (email.isEmpty) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Email address is required.')),
+                              );
+                              return;
+                            }
+                            // 1. Check email format validity
+                            if (!_isValidEmail(email)) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Please enter a valid email address (e.g. name@example.com).')),
+                              );
+                              return;
+                            }
+                            // 2. Verify that the email domain actually exists on the internet
+                            final domainExists = await _verifyEmailDomainExists(email);
+                            if (!domainExists) {
+                              if (!context.mounted) return;
+                              final domain = email.contains('@') ? email.split('@').last : email;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text("The email domain '$domain' does not exist or cannot receive emails.")),
                               );
                               return;
                             }
@@ -871,8 +1023,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             final identifierIsValid = identifier.isNotEmpty &&
                                 (identifier.contains('@') || identifier.length >= 3);
                             if (!identifierIsValid) {
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(this.context).showSnackBar(
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('Enter a valid username or email address.')),
                               );
                               return;
@@ -880,15 +1032,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           }
 
                           if (password.length < 8) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(this.context).showSnackBar(
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Password must be at least 8 characters.')),
                             );
                             return;
                           }
                           if (isSignUp && password != confirmPasswordController.text) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(this.context).showSnackBar(
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Passwords do not match.')),
                             );
                             return;
@@ -897,30 +1049,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           if (isSignUp) {
                             final hashedPassword = _hashPassword(password);
                             try {
-                              final existingUsername = await Supabase.instance.client
-                                  .from('user_acc')
-                                  .select()
-                                  .eq('username', username)
-                                  .maybeSingle();
-
-                              if (existingUsername != null) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(this.context).showSnackBar(
-                                  const SnackBar(content: Text('Username already exists.')),
-                                );
-                                return;
-                              }
-
+                              // Verify if email already registered
                               final existingEmail = await Supabase.instance.client
                                   .from('user_acc')
-                                  .select()
+                                  .select('email')
                                   .eq('email', email)
                                   .maybeSingle();
 
                               if (existingEmail != null) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(this.context).showSnackBar(
-                                  const SnackBar(content: Text('Email already exists.')),
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('This email is already registered. Please log in instead.')),
+                                );
+                                return;
+                              }
+
+                              // Verify if username already taken
+                              final existingUsername = await Supabase.instance.client
+                                  .from('user_acc')
+                                  .select('username')
+                                  .eq('username', username)
+                                  .maybeSingle();
+
+                              if (existingUsername != null) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Username already exists. Please choose a different username.')),
                                 );
                                 return;
                               }
@@ -929,16 +1083,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 'username': username,
                                 'email': email,
                                 'password': hashedPassword,
+                                'has_answered': false,
                               });
                               await AppState.logIn(username);
-                              if (!mounted) return;
+                              if (!context.mounted) return;
                               Navigator.pop(context);
-                              ScaffoldMessenger.of(this.context).showSnackBar(
+                              ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text('Account created for ${AppState.currentUser.value ?? username}')),
                               );
                             } catch (error) {
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(this.context).showSnackBar(
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text('Unable to create account: $error')),
                               );
                             }
@@ -947,8 +1102,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                           final isValid = await _validateUserCredentials(username, password);
                           if (!isValid) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(this.context).showSnackBar(
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Credentials invalid. User not found or password is incorrect.')),
                             );
                             return;
@@ -956,9 +1111,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                           final storedUsername = await _getStoredUsername(username) ?? username;
                           await AppState.logIn(storedUsername);
-                          if (!mounted) return;
+                          if (!context.mounted) return;
                           Navigator.pop(context);
-                          ScaffoldMessenger.of(this.context).showSnackBar(
+                          ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('Logged in as ${AppState.currentUser.value ?? storedUsername}.')),
                           );
                         },
@@ -988,34 +1143,90 @@ class _DashboardScreenState extends State<DashboardScreen> {
     confirmPasswordController.dispose();
   }
 
+  Widget _buildGoogleSignInButton(BuildContext context, {bool shouldCloseDialog = false}) {
+    if (kIsWeb && GoogleSignInPlatform.instance is web.GoogleSignInPlugin) {
+      return SizedBox(
+        height: 44,
+        width: double.infinity,
+        child: (GoogleSignInPlatform.instance as web.GoogleSignInPlugin).renderButton(
+          configuration: web.GSIButtonConfiguration(
+            type: web.GSIButtonType.standard,
+            theme: web.GSIButtonTheme.outline,
+            size: web.GSIButtonSize.large,
+            text: web.GSIButtonText.continueWith,
+            shape: web.GSIButtonShape.rectangular,
+          ),
+        ),
+      );
+    }
+
+    return OutlinedButton.icon(
+      onPressed: () => _signInWithGoogle(context, shouldCloseDialog: shouldCloseDialog),
+      icon: const Text(
+        'G',
+        style: TextStyle(
+          color: Color(0xFF4285F4),
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      label: const Text('Continue with Google'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.textBold,
+        minimumSize: const Size.fromHeight(48),
+        side: BorderSide(color: AppColors.border, width: 1.2),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+  }
+
   Future<void> _signInWithGoogle(BuildContext authContext, {bool shouldCloseDialog = false}) async {
     try {
       await _initializeGoogleSignIn();
-      final account = await GoogleSignIn.instance.authenticate();
 
-      if (!mounted || !authContext.mounted || account.email.isEmpty) return;
-
-      await _saveGoogleUserToDatabase(account.email, account.id);
-      final googleUsername = await _getStoredUsername(account.email) ?? account.email.split('@').first;
-      await AppState.logIn(googleUsername);
-
-      if (shouldCloseDialog) {
-        final navigator = Navigator.of(authContext, rootNavigator: true);
-        if (navigator.canPop()) {
-          navigator.pop();
+      GoogleSignInAccount? account;
+      if (GoogleSignIn.instance.supportsAuthenticate()) {
+        account = await GoogleSignIn.instance.authenticate();
+      } else {
+        account = await GoogleSignIn.instance.attemptLightweightAuthentication(reportAllExceptions: true);
+        if (account == null) {
+          if (!mounted || !authContext.mounted) return;
+          ScaffoldMessenger.of(authContext).showSnackBar(
+            const SnackBar(
+              content: Text('Please select your Google account from the sign-in prompt.'),
+              duration: Duration(seconds: 4),
+            ),
+          );
+          return;
         }
       }
 
-      final activeUsername = AppState.currentUser.value ?? googleUsername;
-      ScaffoldMessenger.of(authContext).showSnackBar(
-        SnackBar(content: Text('Signed in with Google as $activeUsername.')),
+      if (!authContext.mounted) return;
+      await _handleGoogleAccount(
+        account,
+        authContext: authContext,
+        shouldCloseDialog: shouldCloseDialog,
       );
     } catch (error) {
       if (!mounted || !authContext.mounted) return;
 
-      final message = error is GoogleSignInException
-          ? 'Google sign-in failed: ${error.description ?? error.code}'
-          : 'Google sign-in is unavailable right now.';
+      String message;
+      if (error is GoogleSignInException) {
+        if (error.code == GoogleSignInExceptionCode.canceled) {
+          message = 'Google sign-in was canceled.';
+        } else {
+          message = 'Google sign-in failed (${error.code.name}): ${error.description ?? "Please check Google Console configuration."}';
+        }
+      } else {
+        final errStr = error.toString();
+        if (errStr.contains('10') || errStr.contains('ApiException: 10')) {
+          message = 'Google Sign-In Error (10): Ensure SHA-1 fingerprint is registered in Google Cloud Console.';
+        } else {
+          message = 'Google sign-in error: $error';
+        }
+      }
 
       ScaffoldMessenger.of(authContext).showSnackBar(
         SnackBar(content: Text(message)),
